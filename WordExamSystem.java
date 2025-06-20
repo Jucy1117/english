@@ -1,0 +1,382 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.List;
+
+// 主类：单词考试系统
+class WordExamSystem extends JFrame {
+    // 模拟专业单词库（key:单词，value:释义 ），实际可从文件/Db加载
+    private static final Map<String, String> WORD_LIBRARY = new HashMap<>();
+    // 考试时长（分钟）
+    private static final int EXAM_DURATION = 15;
+    // 考试题量
+    private static final int QUESTION_COUNT = 10;
+
+    // 静态初始化单词库
+    static {
+        // 尝试从文件加载单词库
+        try {
+            loadWordLibraryFromFile("src//word_library.txt");
+        } catch (IOException e) {
+            System.err.println("加载单词库文件失败，使用默认单词库: " + e.getMessage());
+            // 使用默认单词库
+            WORD_LIBRARY.put("abandon", "放弃；抛弃");
+            WORD_LIBRARY.put("accelerate", "加速；促进");
+            WORD_LIBRARY.put("benefit", "利益；好处");
+            WORD_LIBRARY.put("capacity", "能力；容量");
+            WORD_LIBRARY.put("diverse", "不同的；多种多样的");
+            WORD_LIBRARY.put("efficient", "高效的；有能力的");
+            WORD_LIBRARY.put("generate", "产生；生成");
+            WORD_LIBRARY.put("highlight", "强调；突出");
+            WORD_LIBRARY.put("illustrate", "说明；阐明");
+            WORD_LIBRARY.put("justify", "证明...正确；为...辩护");
+            WORD_LIBRARY.put("maintain", "维持；保持");
+            WORD_LIBRARY.put("neglect", "忽视；疏忽");
+            WORD_LIBRARY.put("optimize", "优化；使完善");
+            WORD_LIBRARY.put("persist", "坚持；持续");
+            WORD_LIBRARY.put("qualify", "使具备资格；限定");
+            WORD_LIBRARY.put("relevant", "相关的；切题的");
+            WORD_LIBRARY.put("stimulate", "刺激；激励");
+            WORD_LIBRARY.put("temporary", "临时的；暂时的");
+            WORD_LIBRARY.put("ultimate", "最终的；根本的");
+            WORD_LIBRARY.put("validate", "验证；确认");
+        }
+    }
+
+    // 从文件加载单词库
+    private static void loadWordLibraryFromFile(String filePath) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // 格式：单词,释义
+                String[] parts = line.split(",");
+                if (parts.length >= 2) {
+                    WORD_LIBRARY.put(parts[0].trim(), parts[1].trim());
+                }
+            }
+        }
+    }
+
+    public WordExamSystem() {
+        // 1. 初始化窗口
+        setTitle("英文单词考试系统 - 登录");
+        setSize(400, 300);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null); // 居中显示
+
+        // 2. 布局：使用 BorderLayout + 面板嵌套
+        Container container = getContentPane();
+        container.setLayout(new BorderLayout());
+
+        // 2.1 顶部标题
+        JLabel titleLabel = new JLabel("英文单词考试系统", SwingConstants.CENTER);
+        titleLabel.setFont(new Font("微软雅黑", Font.BOLD, 20));
+        container.add(titleLabel, BorderLayout.NORTH);
+
+        // 2.2 中间登录表单（用户名、密码、按钮 ）
+        JPanel formPanel = new JPanel(new GridLayout(3, 2, 10, 10));
+        formPanel.setBorder(BorderFactory.createEmptyBorder(20, 40, 20, 40));
+
+        JLabel userLabel = new JLabel("用户名：");
+        JTextField userField = new JTextField();
+
+        JLabel pwdLabel = new JLabel("密码：");
+        JPasswordField pwdField = new JPasswordField();
+
+        JButton loginBtn = new JButton("登录");
+        loginBtn.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String username = userField.getText();
+                String password = new String(pwdField.getPassword());
+                // 简单模拟登录校验（实际应连数据库查用户 ）
+                if ("admin".equals(username) && "123456".equals(password)) {
+                    JOptionPane.showMessageDialog(WordExamSystem.this,
+                            "登录成功！进入单词考试~",
+                            "提示",
+                            JOptionPane.INFORMATION_MESSAGE);
+                    // 隐藏登录窗口，打开考试窗口
+                    setVisible(false);
+                    new ExamWindow(WORD_LIBRARY, EXAM_DURATION, QUESTION_COUNT).setVisible(true);
+                } else {
+                    JOptionPane.showMessageDialog(WordExamSystem.this,
+                            "用户名或密码错误！",
+                            "错误",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+
+        formPanel.add(userLabel);
+        formPanel.add(userField);
+        formPanel.add(pwdLabel);
+        formPanel.add(pwdField);
+        formPanel.add(new JLabel()); // 占位，让按钮居中
+        formPanel.add(loginBtn);
+
+        container.add(formPanel, BorderLayout.CENTER);
+
+        // 2.3 底部版本信息
+        JLabel versionLabel = new JLabel("v1.0.0", SwingConstants.RIGHT);
+        versionLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 10));
+        container.add(versionLabel, BorderLayout.SOUTH);
+    }
+
+    // 考试窗口类
+    static class ExamWindow extends JFrame {
+        private final Map<String, String> wordLibrary;
+        private final int examDuration;
+        private final int questionCount;
+        private final List<String> selectedWords;
+        private final Map<String, Integer> userAnswers = new HashMap<>();
+        private int currentQuestionIndex = 0;
+        private Timer timer;
+        private LocalDateTime startTime;
+        private LocalDateTime endTime;
+        private JLabel timeLabel;
+        private JLabel questionLabel;
+        private JRadioButton[] optionButtons = new JRadioButton[4];
+        private ButtonGroup optionGroup;
+
+        public ExamWindow(Map<String, String> wordLibrary, int examDuration, int questionCount) {
+            this.wordLibrary = wordLibrary;
+            this.examDuration = examDuration;
+            this.questionCount = questionCount;
+
+            // 随机选择指定数量的单词作为考试题目
+            List<String> allWords = new ArrayList<>(wordLibrary.keySet());
+            Collections.shuffle(allWords);
+            selectedWords = allWords.subList(0, Math.min(questionCount, allWords.size()));
+
+            initUI();
+            startExamTimer();
+        }
+
+        private void initUI() {
+            setTitle("英文单词考试系统 - 考试中");
+            setSize(600, 400);
+            setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+            setLocationRelativeTo(null);
+
+            // 顶部：标题和倒计时
+            JPanel topPanel = new JPanel(new BorderLayout());
+            JLabel titleLabel = new JLabel("专业英语单词测试", SwingConstants.CENTER);
+            titleLabel.setFont(new Font("微软雅黑", Font.BOLD, 18));
+            topPanel.add(titleLabel, BorderLayout.NORTH);
+
+            timeLabel = new JLabel("剩余时间: " + examDuration + ":00");
+            timeLabel.setFont(new Font("微软雅黑", Font.BOLD, 16));
+            timeLabel.setForeground(Color.RED);
+            timeLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            topPanel.add(timeLabel, BorderLayout.CENTER);
+            add(topPanel, BorderLayout.NORTH);
+
+            // 中部：题目和选项
+            JPanel questionPanel = new JPanel(new BorderLayout(10, 10));
+            questionPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
+
+            questionLabel = new JLabel();
+            questionLabel.setFont(new Font("微软雅黑", Font.PLAIN, 16));
+            questionPanel.add(questionLabel, BorderLayout.NORTH);
+
+            JPanel optionsPanel = new JPanel(new GridLayout(4, 1, 5, 5));
+            optionGroup = new ButtonGroup();
+            for (int i = 0; i < 4; i++) {
+                optionButtons[i] = new JRadioButton();
+                optionButtons[i].setFont(new Font("微软雅黑", Font.PLAIN, 14));
+                optionButtons[i].addActionListener(e -> {
+                    String currentWord = selectedWords.get(currentQuestionIndex);
+                    userAnswers.put(currentWord, getSelectedOptionIndex());
+                });
+                optionGroup.add(optionButtons[i]);
+                optionsPanel.add(optionButtons[i]);
+            }
+            questionPanel.add(optionsPanel, BorderLayout.CENTER);
+            add(questionPanel, BorderLayout.CENTER);
+
+            // 底部：导航按钮
+            JPanel buttonPanel = new JPanel();
+            JButton prevBtn = new JButton("上一题");
+            JButton nextBtn = new JButton("下一题");
+            JButton submitBtn = new JButton("提交试卷");
+
+            prevBtn.addActionListener(e -> showPreviousQuestion());
+            nextBtn.addActionListener(e -> showNextQuestion());
+            submitBtn.addActionListener(e -> confirmSubmit());
+
+            buttonPanel.add(prevBtn);
+            buttonPanel.add(nextBtn);
+            buttonPanel.add(submitBtn);
+            add(buttonPanel, BorderLayout.SOUTH);
+
+            // 显示第一题
+            showCurrentQuestion();
+        }
+
+        private void startExamTimer() {
+            startTime = LocalDateTime.now();
+            endTime = startTime.plusMinutes(examDuration);
+
+            timer = new Timer();
+            timer.scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    LocalDateTime now = LocalDateTime.now();
+                    if (now.isAfter(endTime)) {
+                        timer.cancel();
+                        SwingUtilities.invokeLater(() -> {
+                            JOptionPane.showMessageDialog(ExamWindow.this,
+                                    "考试时间已结束，系统将自动提交！",
+                                    "提示",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                            submitExam();
+                        });
+                    } else {
+                        long remainingSeconds = java.time.Duration.between(now, endTime).getSeconds();
+                        long minutes = remainingSeconds / 60;
+                        long seconds = remainingSeconds % 60;
+                        SwingUtilities.invokeLater(() ->
+                                timeLabel.setText("剩余时间: " + String.format("%02d:%02d", minutes, seconds))
+                        );
+                    }
+                }
+            }, 0, 1000);
+        }
+
+        private void showCurrentQuestion() {
+            if (currentQuestionIndex < 0 || currentQuestionIndex >= selectedWords.size()) {
+                return;
+            }
+
+            String currentWord = selectedWords.get(currentQuestionIndex);
+            questionLabel.setText("问题 " + (currentQuestionIndex + 1) + ": " + currentWord);
+
+            // 清除之前的选择
+            optionGroup.clearSelection();
+
+            // 生成当前单词的选项（1个正确，3个干扰项）
+            List<String> options = generateOptions(currentWord);
+            for (int i = 0; i < 4; i++) {
+                optionButtons[i].setText(options.get(i));
+            }
+
+            // 如果用户之前已经选择过答案，恢复选择状态
+            if (userAnswers.containsKey(currentWord)) {
+                int selectedIndex = userAnswers.get(currentWord);
+                optionButtons[selectedIndex].setSelected(true);
+            }
+        }
+
+        private List<String> generateOptions(String correctWord) {
+            List<String> options = new ArrayList<>();
+            options.add(wordLibrary.get(correctWord)); // 正确答案
+
+            // 从单词库中随机选择3个不同的释义作为干扰项
+            List<String> allMeanings = new ArrayList<>(wordLibrary.values());
+            allMeanings.remove(wordLibrary.get(correctWord)); // 移除正确答案
+            Collections.shuffle(allMeanings);
+
+            // 添加3个干扰项
+            for (int i = 0; i < 3 && i < allMeanings.size(); i++) {
+                options.add(allMeanings.get(i));
+            }
+
+            // 打乱选项顺序
+            Collections.shuffle(options);
+            return options;
+        }
+
+        private int getSelectedOptionIndex() {
+            for (int i = 0; i < 4; i++) {
+                if (optionButtons[i].isSelected()) {
+                    return i;
+                }
+            }
+            return -1; // 没有选择任何选项
+        }
+
+        private void showPreviousQuestion() {
+            if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                showCurrentQuestion();
+            }
+        }
+
+        private void showNextQuestion() {
+            if (currentQuestionIndex < selectedWords.size() - 1) {
+                currentQuestionIndex++;
+                showCurrentQuestion();
+            }
+        }
+
+        private void confirmSubmit() {
+            int result = JOptionPane.showConfirmDialog(
+                    this,
+                    "确定要提交试卷吗？提交后将无法修改答案。",
+                    "确认提交",
+                    JOptionPane.YES_NO_OPTION
+            );
+
+            if (result == JOptionPane.YES_OPTION) {
+                submitExam();
+            }
+        }
+
+        private void submitExam() {
+            timer.cancel();
+
+            // 计算得分
+            int score = 0;
+            StringBuilder wrongAnswers = new StringBuilder();
+
+            for (String word : selectedWords) {
+                int userAnswer = userAnswers.getOrDefault(word, -1);
+                List<String> options = generateOptions(word);
+                String correctMeaning = wordLibrary.get(word);
+
+                if (userAnswer != -1 && options.get(userAnswer).equals(correctMeaning)) {
+                    score++;
+                } else {
+                    wrongAnswers.append("\n单词: ").append(word)
+                            .append("\n正确释义: ").append(correctMeaning)
+                            .append("\n你的答案: ").append(userAnswer != -1 ? options.get(userAnswer) : "未作答")
+                            .append("\n");
+                }
+            }
+
+            // 显示结果
+            StringBuilder message = new StringBuilder();
+            message.append("考试完成！\n\n")
+                    .append("总题数: ").append(selectedWords.size()).append("\n")
+                    .append("答对题数: ").append(score).append("\n")
+                    .append("得分: ").append(score * 10).append("/").append(selectedWords.size() * 10).append("\n\n");
+
+            if (wrongAnswers.length() > 0) {
+                message.append("错题分析:").append(wrongAnswers);
+            }
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    message.toString(),
+                    "考试结果",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+
+            // 关闭当前窗口
+            dispose();
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new WordExamSystem().setVisible(true));
+    }
+}
