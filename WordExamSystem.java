@@ -2,15 +2,138 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.List;
+
+// 浮动文字类
+class FloatingText {
+    String text;
+    int x, y;         // 位置
+    int dx, dy;       // 速度
+    Color color;      // 颜色
+    Font font;        // 字体
+
+    public FloatingText(String text, int x, int y, int dx, int dy, Color color, Font font) {
+        this.text = text;
+        this.x = x;
+        this.y = y;
+        this.dx = dx;
+        this.dy = dy;
+        this.color = color;
+        this.font = font;
+    }
+
+    // 更新位置
+    public void update(int width, int height) {
+        x += dx;
+        y += dy;
+
+        // 边界检测 - 碰到边界反弹
+        if (x <= 0 || x >= width - 50) {
+            dx = -dx;
+        }
+        if (y <= 20 || y >= height - 20) {
+            dy = -dy;
+        }
+    }
+}
+
+// 浮动文字面板
+class FloatingTextPanel extends JPanel {
+    private List<FloatingText> texts = new ArrayList<>();
+    private Timer timer;
+    private Random random = new Random();
+
+    public FloatingTextPanel() {
+        // 初始化一些浮动文字
+        initTexts();
+
+        // 设置背景色
+        setBackground(Color.BLACK);
+
+        // 创建定时器，每30毫秒更新一次
+        timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                SwingUtilities.invokeLater(() -> {
+                    updatePositions();
+                    repaint();
+                });
+            }
+        }, 0, 30); // 初始延迟0ms，周期30ms
+    }
+
+    // 初始化文字
+    private void initTexts() {
+        String[] words = {"Java", "Swing", "Animation", "Floating", "Text", "Cloud", "Programming", "UI"};
+        Font[] fonts = {
+                new Font("Arial", Font.BOLD, 16),
+                new Font("Times New Roman", Font.ITALIC, 20),
+                new Font("Courier New", Font.PLAIN, 18),
+                new Font("Verdana", Font.BOLD, 22)
+        };
+
+        for (String word : words) {
+            addText(word, fonts[random.nextInt(fonts.length)]);
+        }
+    }
+
+    // 添加新的浮动文字
+    public void addText(String text, Font font) {
+        int widthBound = getWidth() - 100;
+        if (widthBound <= 0) {
+            widthBound = 100; // 给一个默认正数，避免 nextInt 参数为非正数
+        }
+        int x = random.nextInt(widthBound);
+
+        int heightBound = getHeight() - 50;
+        if (heightBound <= 0) {
+            heightBound = 50;
+        }
+        int y = random.nextInt(heightBound) + 20;
+
+        int dx = random.nextInt(3) - 1;
+        int dy = random.nextInt(3) - 1;
+
+        if (dx == 0 && dy == 0) {
+            dx = 1;
+        }
+
+        Color color = new Color(
+                random.nextInt(256),
+                random.nextInt(256),
+                random.nextInt(256)
+        );
+
+        texts.add(new FloatingText(text, x, y, dx, dy, color, font));
+    }
+
+    // 更新所有文字的位置
+    private void updatePositions() {
+        for (FloatingText text : texts) {
+            text.update(getWidth(), getHeight());
+        }
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+
+        // 绘制所有浮动文字
+        for (FloatingText text : texts) {
+            g.setColor(text.color);
+            g.setFont(text.font);
+            g.drawString(text.text, text.x, text.y);
+        }
+    }
+
+}
 
 // 主类：单词考试系统
 class WordExamSystem extends JFrame {
@@ -25,7 +148,7 @@ class WordExamSystem extends JFrame {
     static {
         // 尝试从文件加载单词库
         try {
-            loadWordLibraryFromFile("src//word_library.txt");
+            loadWordLibraryFromFile("WordTest//src//word_library.txt");
         } catch (IOException e) {
             System.err.println("加载单词库文件失败，使用默认单词库: " + e.getMessage());
             // 使用默认单词库
@@ -54,7 +177,7 @@ class WordExamSystem extends JFrame {
 
     // 从文件加载单词库
     private static void loadWordLibraryFromFile(String filePath) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath), "UTF-8"))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 // 格式：单词,释义
@@ -99,7 +222,7 @@ class WordExamSystem extends JFrame {
                 String username = userField.getText();
                 String password = new String(pwdField.getPassword());
                 // 简单模拟登录校验（实际应连数据库查用户 ）
-                if ("admin".equals(username) && "123456".equals(password)) {
+                if ("java".equals(username) && "12121".equals(password)) {
                     JOptionPane.showMessageDialog(WordExamSystem.this,
                             "登录成功！进入单词考试~",
                             "提示",
@@ -337,6 +460,7 @@ class WordExamSystem extends JFrame {
             // 计算得分
             int score = 0;
             StringBuilder wrongAnswers = new StringBuilder();
+            List<String> wrongWords = new ArrayList<>();
 
             for (String word : selectedWords) {
                 int userAnswer = userAnswers.getOrDefault(word, -1);
@@ -350,6 +474,7 @@ class WordExamSystem extends JFrame {
                             .append("\n正确释义: ").append(correctMeaning)
                             .append("\n你的答案: ").append(userAnswer != -1 ? options.get(userAnswer) : "未作答")
                             .append("\n");
+                    wrongWords.add(word + ": " + correctMeaning);
                 }
             }
 
@@ -371,12 +496,29 @@ class WordExamSystem extends JFrame {
                     JOptionPane.INFORMATION_MESSAGE
             );
 
+            // 显示浮动文字窗口
+            if (!wrongWords.isEmpty()) {
+                JFrame floatingTextFrame = new JFrame("错题正确答案浮动显示");
+                floatingTextFrame.setSize(800, 600);
+                floatingTextFrame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+                floatingTextFrame.setLocationRelativeTo(null);
+
+                FloatingTextPanel floatingTextPanel = new FloatingTextPanel();
+                for (String wrongWord : wrongWords) {
+                    Font font = new Font("SimHei", Font.BOLD, 16);
+                    floatingTextPanel.addText(wrongWord, font);
+                }
+                floatingTextFrame.add(floatingTextPanel);
+                floatingTextFrame.setVisible(true);
+            }
+
             // 关闭当前窗口
             dispose();
         }
     }
 
     public static void main(String[] args) {
+        System.setProperty("file.encoding", "UTF-8");
         SwingUtilities.invokeLater(() -> new WordExamSystem().setVisible(true));
     }
 }
